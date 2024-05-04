@@ -1,12 +1,20 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const jwt = require("jsonwebtoken");
+var cookieParser = require("cookie-parser");
 const {MongoClient, ServerApiVersion, ObjectId} = require("mongodb");
+require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.crgl3kb.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -18,10 +26,47 @@ const client = new MongoClient(uri, {
   },
 });
 
+/* won middleware */
+const logger = async (req, res, next) => {
+  console.log("called", req.host, req.originalUrl);
+  next();
+};
+
+const verifyToken = async (req, res, next) => {
+  const token = req.cookies?.token;
+  console.log(req.cookies);
+  if (!token) {
+    return res.status(401).send({massage: "not authorized"});
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({massage: "unauthorized"});
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     const serviceCollection = client.db("carRecap").collection("services");
     const bookingCollection = client.db("carRecap").collection("booking");
+
+    /* auth token api */
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      console.log(user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1hr",
+      });
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production" ? true : false,
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+        })
+        .send({success: true});
+    });
 
     /* service api */
     app.get("/services", async (req, res) => {
@@ -37,8 +82,12 @@ async function run() {
     });
 
     /* booking api */
-    app.get("/booking", async (req, res) => {
-      const result = await bookingCollection.find().toArray();
+    app.get("/booking", logger, verifyToken, async (req, res) => {
+      let query = {};
+      if (req.query?.email) {
+        query = {email: req.query?.email};
+      }
+      const result = await bookingCollection.find(query).toArray();
       res.send(result);
     });
 
