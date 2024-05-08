@@ -9,7 +9,12 @@ const port = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://cardoctor-bd.web.app",
+      "https://cardoctor-bd.firebaseapp.com",
+    ],
     credentials: true,
   })
 );
@@ -33,8 +38,7 @@ const logger = async (req, res, next) => {
 };
 
 const verifyToken = async (req, res, next) => {
-  const token = req.cookies?.token;
-  console.log(req.cookies);
+  const token = req?.cookies?.token;
   if (!token) {
     return res.status(401).send({massage: "not authorized"});
   }
@@ -52,17 +56,28 @@ async function run() {
     const serviceCollection = client.db("carRecap").collection("services");
     const bookingCollection = client.db("carRecap").collection("booking");
 
-    /* auth token api */
+    /* auth token api by jwt */
+    //creating Token
     app.post("/jwt", async (req, res) => {
       const user = req.body;
-      console.log(user);
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "1hr",
+        expiresIn: "1d",
       });
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production" ? true : false,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+        })
+        .send({success: true});
+    });
+
+    app.post("/logout", async (req, res) => {
+      const user = req.body;
+      res
+        .clearCookie("token", {
+          maxAge: 0,
+          secure: process.env.NODE_ENV === "production",
           sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
         .send({success: true});
@@ -83,6 +98,10 @@ async function run() {
 
     /* booking api */
     app.get("/booking", logger, verifyToken, async (req, res) => {
+      if (req.user.email !== req.query.email) {
+        console.log("test");
+        return res.status(403).send({massage: "forbidden access"});
+      }
       let query = {};
       if (req.query?.email) {
         query = {email: req.query?.email};
