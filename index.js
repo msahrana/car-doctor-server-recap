@@ -51,6 +51,12 @@ const verifyToken = async (req, res, next) => {
   });
 };
 
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+};
+
 async function run() {
   try {
     const serviceCollection = client.db("carRecap").collection("services");
@@ -63,23 +69,13 @@ async function run() {
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "1d",
       });
-      res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-        })
-        .send({success: true});
+      res.cookie("token", token, cookieOptions).send({success: true});
     });
 
     app.post("/logout", async (req, res) => {
       const user = req.body;
       res
-        .clearCookie("token", {
-          maxAge: 0,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-        })
+        .clearCookie("token", {...cookieOptions, maxAge: 0})
         .send({success: true});
     });
 
@@ -143,7 +139,6 @@ async function run() {
       res.send(result);
     });
 
-    await client.db("admin").command({ping: 1});
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
